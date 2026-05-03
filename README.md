@@ -7,7 +7,7 @@
 
 A pure-Go, zero-dependency, hyper-minimalist toolkit for building Terminal User Interfaces (TUIs).
 
-> **Notice**: This is a heavily optimized, thread-safe fork of the original [nyangkosense/ttbox](https://github.com/nyangkosense/ttbox).
+> **Notice**: This is a heavily optimized, thread-safe fork of the original [nyangkosense/ttbox](https://github.com/nyangkosense/tinybox).
 
 Adhering to the "suckless" philosophy, `ttbox` does exactly what it needs to do and nothing more. It skips bloated `terminfo` databases and Cgo bindings in favor of hardcoded, universally supported ANSI escape sequences.
 
