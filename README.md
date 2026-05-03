@@ -7,13 +7,13 @@
 
 A pure-Go, zero-dependency, hyper-minimalist toolkit for building Terminal User Interfaces (TUIs).
 
-> **Notice**: This is a heavily optimized, thread-safe fork of the original [nyangkosense/ttbox](https://github.com/nyangkosense/tinybox).
+> **Notice**: This is a heavily optimized, thread-safe fork of the original [nyangkosense/tinybox](https://github.com/nyangkosense/tinybox).
 
 Adhering to the "suckless" philosophy, `ttbox` does exactly what it needs to do and nothing more. It skips bloated `terminfo` databases and Cgo bindings in favor of hardcoded, universally supported ANSI escape sequences.
 
 ## 🚀 Why this Fork?
 
-While the original `ttbox` was a brilliant exercise in minimalism, real-world TUI applications often require concurrent rendering and robust handling of massive I/O streams. This fork maintains the minimalist footprint while introducing enterprise-grade optimizations:
+While the original `tinybox` was a brilliant exercise in minimalism, real-world TUI applications often require concurrent rendering and robust handling of massive I/O streams. This fork maintains the minimalist footprint while introducing enterprise-grade optimizations:
 
 *   **Thread Safety (`sync.Mutex`)**: The entire terminal state is now concurrency-safe. You can safely call `tb.SetCell` or `tb.Present` from multiple goroutines (e.g., background workers updating a progress bar).
 *   **Blazing Fast Diffing (64-bit Bit-packing)**: Instead of comparing multi-field structs to determine screen changes, this fork packs each cell's state (Rune, Foreground, Background, and Attributes) into a single `uint64` signature (`c.pack()`). Diffing the screen is now a single scalar integer check, drastically reducing CPU overhead during `Present()`.
