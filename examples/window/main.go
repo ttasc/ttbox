@@ -68,11 +68,11 @@ func handle(d *drag, evt tb.Event) bool {
 
 func draw(d *drag) {
 	tb.Clear()
-	tb.DrawTextLeft(0, "ttbox mouse demo", 14, 0)
-	tb.DrawTextRight(0, "esc/q to quit", 8, 0)
-	tb.DrawTextLeft(2, "Drag the box with the left mouse button", 15, 0)
+	tb.DrawTextLeft(0, "ttbox mouse demo", 14, tb.ColorDefault)
+	tb.DrawTextRight(0, "esc/q to quit", 8, tb.ColorDefault)
+	tb.DrawTextLeft(2, "Drag the box with the left mouse button", 15, tb.ColorDefault)
 
-	tb.SetColor(13, 0)
+	tb.SetColor(13, tb.ColorDefault)
 	tb.Box(d.x, d.y, boxW, boxH)
 	tb.PrintAt(d.x+(boxW-len("drag me"))/2, d.y+boxH/2, "drag me")
 

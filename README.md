@@ -14,6 +14,7 @@ Adhering to the "suckless" philosophy, `ttbox` does exactly what it needs to do 
 
 While the original `tinybox` was a brilliant exercise in minimalism, real-world TUI applications often require concurrent rendering and robust handling of massive I/O streams. This fork maintains the minimalist footprint while introducing enterprise-grade optimizations:
 
+*   **True Non-Blocking Event Loop (Self-Pipe Trick)**: Unlike typical minimalist libs that block entirely on `stdin` reads, this fork implements a POSIX self-pipe architecture. `PollEvent()` listens to both user input and internal OS signals concurrently, guaranteeing zero-latency reactions to events like background window resizing.
 *   **Thread Safety (`sync.Mutex`)**: The entire terminal state is now concurrency-safe. You can safely call `tb.SetCell` or `tb.Present` from multiple goroutines (e.g., background workers updating a progress bar).
 *   **Blazing Fast Diffing (64-bit Bit-packing)**: Instead of comparing multi-field structs to determine screen changes, this fork packs each cell's state (Rune, Foreground, Background, and Attributes) into a single `uint64` signature (`c.pack()`). Diffing the screen is now a single scalar integer check, drastically reducing CPU overhead during `Present()`.
 *   **1D Memory Architecture**: The 2D slice buffer (`[][]Cell`) was flattened into a 1D slice (`[]Cell`). This maximizes CPU cache locality and allows functions like `Scroll()` and `applyResize()` to use Go's ultra-fast native `copy()` built-in, moving memory blocks directly rather than iterating through loops.
@@ -23,7 +24,7 @@ While the original `tinybox` was a brilliant exercise in minimalism, real-world 
 
 ## 🛠️ What it CAN do
 *   Double-buffered, immediate-mode rendering (only diffs are written to stdout).
-*   256-color palette + Default terminal colors.
+*   256-color palette + Default terminal colors + Global Background coloring.
 *   Mouse input tracking (X11 and SGR modes > 223 coords, scroll wheels).
 *   Clean Suspend/Resume handling (`SIGTSTP` / `SIGCONT`).
 *   Window resize tracking via `SIGWINCH` (with `ioctl` and `\033[6n` fallbacks).
@@ -41,6 +42,13 @@ To maintain its zero-dependency, <1,500 LOC footprint, `ttbox` intentionally **d
 ```bash
 go get github.com/ttasc/ttbox
 ```
+
+## 🔄 Drop-in Replacement
+**Using this fork is exactly the same as using the original library!**
+
+You can replace the original `tinybox` import with this one without fearing any conflicts or needing to rewrite your existing code. All original functions behave identically, just much faster and safer.
+
+The only new API addition you need to know about is `tb.SetGlobalBg(color int)`. In the original library, you had to manually fill the screen with spaces to set a background color. Now, you just call this function once to set a default background color for your entire application.
 
 ## 📖 Usage Guide
 
