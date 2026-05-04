@@ -1,7 +1,6 @@
 # 📦 ttbox
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ttasc/ttbox.svg)](https://pkg.go.dev/github.com/ttasc/ttbox)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies: 0](https://img.shields.io/badge/Dependencies-0-success.svg)](#)
 [![OS: POSIX](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20BSD-lightgrey.svg)](#)
 
