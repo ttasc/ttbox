@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"time"
 
 	tb "github.com/ttasc/ttbox"
 )
@@ -37,8 +36,7 @@ func main() {
 	for {
 		tb.Present()
 
-		// It is mandatory to use PollEventTimeout when you want to use the suspend-resume mechanism.
-		evt, err := tb.PollEventTimeout(50 * time.Millisecond)
+		evt, err := tb.PollEvent()
 		if err != nil {
 			continue
 		}

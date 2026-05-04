@@ -239,6 +239,8 @@ type Terminal struct {
 	escDelay      int
 	sigwinchCh    chan os.Signal
 	sigcontCh     chan os.Signal
+	wakeupRead    int
+	wakeupWrite   int
 }
 
 var term Terminal
@@ -314,15 +316,15 @@ func queryTermSize() (int, int, error) {
 }
 
 func getTermSize() (int, int, error) {
+	var ws winsize
+	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdout), TIOCGWINSZ, uintptr(unsafe.Pointer(&ws)))
+	if e == 0 && ws.Col > 0 && ws.Row > 0 {
+		return int(ws.Col), int(ws.Row), nil
+	}
 	cols, _ := strconv.Atoi(os.Getenv("COLUMNS"))
 	lines, _ := strconv.Atoi(os.Getenv("LINES"))
 	if cols > 0 && lines > 0 {
 		return cols, lines, nil
-	}
-	var ws winsize
-	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdout), TIOCGWINSZ, uintptr(unsafe.Pointer(&ws)))
-	if e == 0 {
-		return int(ws.Col), int(ws.Row), nil
 	}
 	return queryTermSize()
 }
@@ -337,6 +339,10 @@ func pushEvent(evt Event) {
 
 	if len(term.eventQueue) < cap(term.eventQueue) {
 		term.eventQueue = append(term.eventQueue, evt)
+
+		if term.wakeupWrite > 0 {
+			syscall.Write(term.wakeupWrite,[]byte{0})
+		}
 	}
 }
 
@@ -430,7 +436,7 @@ func Init() error {
 	term.cursorStyle = CursorBlock
 	term.escDelay = 25
 
-	term.sigwinchCh = make(chan os.Signal, 1)
+	term.sigwinchCh = make(chan os.Signal, 64)
 	term.sigcontCh = make(chan os.Signal, 1)
 	signal.Notify(term.sigwinchCh, syscall.SIGWINCH)
 	signal.Notify(term.sigcontCh, syscall.SIGCONT)
@@ -440,6 +446,15 @@ func Init() error {
 	writeString(AlternateScreen)
 	writeString(HideCursor)
 	writeString(ClearScreen)
+
+	var p[2]int
+	if err := syscall.Pipe(p[:]); err != nil {
+		return fmt.Errorf("failed to create wakeup pipe: %w", err)
+	}
+	term.wakeupRead = p[0]
+	term.wakeupWrite = p[1]
+	syscall.SetNonblock(term.wakeupRead, true)
+	syscall.SetNonblock(term.wakeupWrite, true)
 
 	return nil
 }
@@ -468,6 +483,14 @@ func Close() error {
 	err := disableRawMode()
 	term.initialized = false
 	term.isRaw = false
+
+	if term.wakeupRead > 0 {
+		syscall.Close(term.wakeupRead)
+		syscall.Close(term.wakeupWrite)
+		term.wakeupRead = 0
+		term.wakeupWrite = 0
+	}
+
 	return err
 }
 
@@ -730,41 +753,72 @@ func GetTerminalSize() (width, height int) {
 }
 
 func PollEvent() (Event, error) {
-	if evt, ok := popEvent(); ok {
-		if evt.Type == EventResize {
-			applyResize()
+	for {
+		if evt, ok := popEvent(); ok {
+			if evt.Type == EventResize {
+				applyResize()
+			}
+			return evt, nil
 		}
-		return evt, nil
-	}
 
-	var buf [4096]byte
-	n, err := syscall.Read(syscall.Stdin, buf[:])
-	if err != nil {
-		return Event{}, err
-	}
-	if n == 0 {
-		return Event{}, fmt.Errorf("no input")
-	}
+		fdSet := &syscall.FdSet{}
+		stdin := int(syscall.Stdin)
+		setFd(fdSet, stdin)
+		maxFd := stdin
 
-	if term.isPasting {
-		if idx := bytes.Index(buf[:n], []byte("\033[201~")); idx != -1 {
-			term.isPasting = false
-			return Event{Type: EventPaste, Text: string(buf[:idx]), IsLast: true}, nil
+		if term.initialized && term.wakeupRead > 0 {
+			setFd(fdSet, term.wakeupRead)
+			if term.wakeupRead > maxFd {
+				maxFd = term.wakeupRead
+			}
 		}
-		return Event{Type: EventPaste, Text: string(buf[:n]), IsLast: false}, nil
-	}
 
-	if n >= 6 && string(buf[:6]) == "\033[200~" {
-		term.isPasting = true
-		if idx := bytes.Index(buf[6:n], []byte("\033[201~")); idx != -1 {
-			term.isPasting = false
-			return Event{Type: EventPaste, Text: string(buf[6 : 6+idx]), IsLast: true}, nil
+		_, err := selectRead(maxFd, fdSet, nil)
+		if err != nil && err != syscall.EINTR {
+			return Event{}, err
 		}
-		return Event{Type: EventPaste, Text: string(buf[6:n]), IsLast: false}, nil
+
+		if term.initialized && term.wakeupRead > 0 && fdIsSet(fdSet, term.wakeupRead) {
+			var drain[32]byte
+			for {
+				n, _ := syscall.Read(term.wakeupRead, drain[:])
+				if n <= 0 {
+					break
+				}
+			}
+			continue
+		}
+
+		if fdIsSet(fdSet, stdin) {
+			var buf [4096]byte
+			n, err := syscall.Read(syscall.Stdin, buf[:])
+			if err != nil {
+				return Event{}, err
+			}
+			if n == 0 {
+				return Event{}, fmt.Errorf("no input")
+			}
+
+			if term.isPasting {
+				if idx := bytes.Index(buf[:n], []byte("\033[201~")); idx != -1 {
+					term.isPasting = false
+					return Event{Type: EventPaste, Text: string(buf[:idx]), IsLast: true}, nil
+				}
+				return Event{Type: EventPaste, Text: string(buf[:n]), IsLast: false}, nil
+			}
+
+			if n >= 6 && string(buf[:6]) == "\033[200~" {
+				term.isPasting = true
+				if idx := bytes.Index(buf[6:n], []byte("\033[201~")); idx != -1 {
+					term.isPasting = false
+					return Event{Type: EventPaste, Text: string(buf[6 : 6+idx]), IsLast: true}, nil
+				}
+				return Event{Type: EventPaste, Text: string(buf[6:n]), IsLast: false}, nil
+			}
+
+			return parseInput(buf[:n])
+		}
 	}
-
-
-	return parseInput(buf[:n])
 }
 
 func PollEventTimeout(timeout time.Duration) (Event, error) {
@@ -775,17 +829,25 @@ func PollEventTimeout(timeout time.Duration) (Event, error) {
 		return evt, nil
 	}
 
-	fd := int(syscall.Stdin)
 	fdSet := &syscall.FdSet{}
-	setFd(fdSet, fd)
+	stdin := int(syscall.Stdin)
+	setFd(fdSet, stdin)
+	maxFd := stdin
+
+	if term.initialized && term.wakeupRead > 0 {
+		setFd(fdSet, term.wakeupRead)
+		if term.wakeupRead > maxFd {
+			maxFd = term.wakeupRead
+		}
+	}
 
 	tv := syscall.Timeval{
 		Sec:  int64(timeout / time.Second),
 		Usec: int64((timeout % time.Second) / time.Microsecond),
 	}
 
-	n, err := selectRead(fd, fdSet, &tv)
-	if err != nil {
+	n, err := selectRead(maxFd, fdSet, &tv)
+	if err != nil && err != syscall.EINTR {
 		return Event{}, err
 	}
 	if n <= 0 {
@@ -1185,7 +1247,6 @@ func Pause() {
 	writeString(ResetColor)
 }
 
-// It is mandatory to use PollEventTimeout when you want to use the suspend-resume mechanism.
 func Suspend() {
 	if !term.initialized {
 		return
