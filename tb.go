@@ -269,12 +269,14 @@ func enableRawMode() error {
 	}
 	term.origTermios = *orig
 	raw := *orig
-	raw.Lflag &= ^uint32(ECHO | ICANON | ISIG | IEXTEN)
-	raw.Iflag &= ^uint32(BRKINT | ICRNL | INPCK | ISTRIP | IXON)
-	raw.Oflag &= ^uint32(OPOST)
+
+	raw.Lflag &^= (ECHO | ICANON | ISIG | IEXTEN)
+	raw.Iflag &^= (BRKINT | ICRNL | INPCK | ISTRIP | IXON)
+	raw.Oflag &^= OPOST
 	raw.Cflag |= CS8
 	raw.Cc[VMIN] = 1
 	raw.Cc[VTIME] = 0
+
 	return setTermios(int(syscall.Stdin), &raw)
 }
 
@@ -290,7 +292,7 @@ func queryTermSize() (int, int, error) {
 
 	fdSet := &syscall.FdSet{}
 	setFd(fdSet, fd)
-	tv := syscall.Timeval{Sec: 1, Usec: 0}
+	tv := syscall.NsecToTimeval(time.Second.Nanoseconds())
 
 	n, err := selectRead(fd, fdSet, &tv)
 	if err != nil {
@@ -841,10 +843,7 @@ func PollEventTimeout(timeout time.Duration) (Event, error) {
 		}
 	}
 
-	tv := syscall.Timeval{
-		Sec:  int64(timeout / time.Second),
-		Usec: int64((timeout % time.Second) / time.Microsecond),
-	}
+	tv := syscall.NsecToTimeval(timeout.Nanoseconds())
 
 	n, err := selectRead(maxFd, fdSet, &tv)
 	if err != nil && err != syscall.EINTR {
@@ -1289,7 +1288,7 @@ func GetCursorPos() (x, y int) {
 
 	fdSet := &syscall.FdSet{}
 	setFd(fdSet, fd)
-	tv := syscall.Timeval{Sec: 1, Usec: 0} // 1 second timeout
+	tv := syscall.NsecToTimeval(time.Second.Nanoseconds()) // 1 second timeout
 
 	n, err := selectRead(fd, fdSet, &tv)
 	if err != nil {
